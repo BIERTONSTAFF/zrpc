@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies.zrpc]
 path = "../../"
+
+[dependencies.test-domain]
+path = "../test-domain"

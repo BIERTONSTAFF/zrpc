@@ -1,14 +1,20 @@
-use zrpc::models::{dt::ZRpcDt, req::ZRpcReq};
+use test_domain::User;
 use zrpc::client::ZRpcClient;
+use zrpc::models::{dt::ZRpcDt, req::ZRpcReq};
 
 fn main() {
     let mut client = ZRpcClient::new("127.0.0.1:12520").expect("Failed to initialize ZRpcClient");
     let client_handle = std::thread::spawn(move || {
         match client.call(ZRpcReq::new(
-            "say_hello".to_string(),
-            vec![ZRpcDt::String("John".to_string())],
+            "user_info".to_string(),
+            vec![ZRpcDt::serialize(User {
+                name: "John".to_string(),
+                age: 50,
+            })],
         )) {
-            Ok(v) => println!("Response: {:#?}", v),
+            Ok(v) => {
+                println!("Response: {:?}", v);
+            }
             Err(_) => eprintln!("Failed to call remote procedure"),
         }
     });

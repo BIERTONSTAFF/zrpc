@@ -3,5 +3,11 @@ name = "test-server"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+serde = { version = "1.0.204", features = ["derive"] }
+
 [dependencies.zrpc]
 path = "../../"
+
+[dependencies.test-domain]
+path = "../test-domain"

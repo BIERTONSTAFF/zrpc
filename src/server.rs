@@ -7,6 +7,15 @@ use std::{
 
 use crate::models::{dt::ZRpcDt, error_kind::ErrorKind, req::ZRpcReq};
 
+#[macro_export]
+macro_rules! add_procs {
+    ($server:expr, $($proc:ident),*) => {
+        $(
+            $server.add_proc(stringify!($proc), $proc);
+        )*
+    };
+}
+
 pub struct ZRpcServer {
     listener: TcpListener,
     procs: Arc<Mutex<HashMap<String, Box<dyn Fn(&Vec<ZRpcDt>) -> ZRpcDt + Send + Sync>>>>,
@@ -35,7 +44,8 @@ impl ZRpcServer {
                     let req: ZRpcReq = bincode::deserialize(&buf).map_err(|_| ())?;
                     let bytes = match self.procs.lock().unwrap().get(&req.0) {
                         Some(proc) => bincode::serialize(&proc(&req.1)).map_err(|_| ())?,
-                        None => bincode::serialize(&ZRpcDt::Error(ErrorKind::ProcedureNotFound)).map_err(|_| ())?,
+                        None => bincode::serialize(&ZRpcDt::Error(ErrorKind::ProcedureNotFound))
+                            .map_err(|_| ())?,
                     };
 
                     stream
@@ -53,8 +63,15 @@ impl ZRpcServer {
         Ok(())
     }
 
-    pub fn add_proc<F>(&mut self, n: String, f: F)
-    where F: Fn(&Vec<ZRpcDt>) -> ZRpcDt + 'static + Send + Sync {
-        self.procs.lock().unwrap().insert(n, Box::new(f));
+    pub fn add_proc<F>(&mut self, name: &str, proc: F)
+    where
+        F: Fn(&Vec<ZRpcDt>) -> ZRpcDt + 'static + Send + Sync,
+    {
+        println!("[ZRpcServer] '{}' procedure has been loaded", name);
+
+        self.procs
+            .lock()
+            .unwrap()
+            .insert(name.to_string(), Box::new(proc));
     }
 }
