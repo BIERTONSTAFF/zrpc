@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex};
 
 use test_domain::User;
 use zrpc::{
@@ -8,7 +8,7 @@ use zrpc::{
 };
 
 lazy_static::lazy_static! {
-    static ref USERS: Arc<Mutex<Vec<User>>> = Arc::new(Mutex::new(vec![]));
+    static ref USERS: Mutex<Vec<User>> = Mutex::new(vec![]);
 }
 
 fn create_user(p: &Vec<ZRpcDt>) -> ZRpcDt {

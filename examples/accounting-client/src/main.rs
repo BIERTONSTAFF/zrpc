@@ -1,4 +1,4 @@
-use std::time::Duration;
+
 
 use test_domain::User;
 use zrpc::{
@@ -14,10 +14,10 @@ fn main() {
         vec![ZRpcDt::String("John".to_string()), ZRpcDt::Int(18)],
     )) {
         Ok(v) => {
-            println!("user_created: {:#?}", v.deserialize::<User>());
+            println!("user_created: {:#?}", v.deserialize::<User>().unwrap());
 
             match client.call(ZRpcReq::new("list_users".to_string(), vec![])) {
-                Ok(v) => println!("users_list: {:#?}", v.deserialize::<Vec<User>>()),
+                Ok(v) => println!("users_list: {:#?}", v.deserialize::<Vec<User>>().unwrap()),
                 Err(_) => eprintln!("Failed to call 'list_users' procedure"),
             }
         }
