@@ -21,10 +21,11 @@ impl ZRpcClient {
         let len = (bytes.len() as u32).to_be_bytes();
 
         self.stream.write_all(&len).map_err(|_| ())?;
+        self.stream.write_all(&bytes).map_err(|_| ())?;
 
         println!(
             "[ZRpcClient] {} bytes were written",
-            self.stream.write(&bytes).map_err(|_| ())?
+            len.len() + bytes.len()
         );
 
         let mut len = [0u8; 4];

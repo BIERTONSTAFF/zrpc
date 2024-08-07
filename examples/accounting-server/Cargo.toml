@@ -1,0 +1,13 @@
+[package]
+name = "accounting-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lazy_static = "1.5.0"
+
+[dependencies.zrpc]
+path = "../../"
+
+[dependencies.test-domain]
+path = "../test-domain"
