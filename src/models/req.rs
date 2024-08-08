@@ -6,7 +6,7 @@ use super::dt::ZRpcDt;
 pub struct ZRpcReq(pub String, pub Vec<ZRpcDt>);
 
 impl ZRpcReq {
-    pub fn new(proc: String, params: Vec<ZRpcDt>) -> Self {
-        Self(proc, params)
+    pub fn new(proc: &str, params: Vec<ZRpcDt>) -> Self {
+        Self(proc.to_string(), params)
     }
 }
