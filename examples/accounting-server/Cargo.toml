@@ -5,9 +5,7 @@ edition = "2021"
 
 [dependencies]
 lazy_static = "1.5.0"
-
-[dependencies.zrpc]
-path = "../../"
+zrpc = { path = "../../", features = ["log"] }
 
 [dependencies.test-domain]
 path = "../test-domain"

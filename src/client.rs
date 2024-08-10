@@ -3,7 +3,10 @@ use std::{
     net::TcpStream,
 };
 
-use crate::models::{dt::ZRpcDt, req::ZRpcReq};
+use crate::{
+    log,
+    models::{dt::ZRpcDt, req::ZRpcReq},
+};
 
 pub struct ZRpcClient {
     stream: TcpStream,
@@ -23,7 +26,7 @@ impl ZRpcClient {
         self.stream.write_all(&len).map_err(|_| ())?;
         self.stream.write_all(&bytes).map_err(|_| ())?;
 
-        println!(
+        log!(
             "[ZRpcClient] {} bytes were written",
             len.len() + bytes.len()
         );

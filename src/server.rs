@@ -5,7 +5,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::models::{dt::ZRpcDt, error_kind::ErrorKind, req::ZRpcReq};
+use crate::{
+    log,
+    models::{dt::ZRpcDt, error_kind::ErrorKind, req::ZRpcReq},
+};
 
 #[macro_export]
 macro_rules! add_procs {
@@ -51,7 +54,7 @@ impl ZRpcServer {
     where
         F: Fn(&Vec<ZRpcDt>) -> ZRpcDt + 'static + Send + Sync,
     {
-        println!("[ZRpcServer] '{}' procedure has been loaded", name);
+        log!("[ZRpcServer] '{}' procedure has been loaded", name);
 
         self.procs
             .lock()
@@ -67,7 +70,7 @@ impl ZRpcServer {
             let mut len = [0u8; 4];
 
             if let Err(_) = stream.read_exact(&mut len) {
-                eprintln!(
+                log!(
                     "[ZRpcServer:{:?}] Connection closed",
                     std::thread::current().id()
                 );
@@ -98,10 +101,10 @@ impl ZRpcServer {
                 .write_all(&bytes)
                 .map_err(|_| "Failed to write result")?;
 
-            println!(
+            log!(
                 "[ZRpcServer:{:?}] {} bytes were written",
                 std::thread::current().id(),
-                len.len() + bytes.len(),
+                len.len() + bytes.len()
             );
         }
     }
