@@ -131,3 +131,22 @@ match client.call(ZRpcReq::new(
     Err(_) => eprintln!("Failed to call remote procedure"), // **Ошибка при вызове удалённой процедуры**
 }
 ```
+# Расширения
+## Макросы
+Для инициализации запроса также можно использоваться макрос `req!()` и `params!()`:
+```rust
+let _ = client.call(req!("procedure_name", params!(..)));
+```
+```rust
+params!("Hello, World", 1, 3.14) => vec![ZRpcDt::String("Hello, World".to_string()), ZRpcDt::Int(1), ZRpcDt::Float(3.14)]
+``` 
+## Приведение типов 
+Метод `to_zdt()` применим к типам, поддерживающимся ZRpcDt: `String`, `i32`, `f32`, `T`.
+
+Пример:
+```rust
+1.to_zdt() => ZRpcDt::Int(1)
+3.14.to_zdt() => ZRpcDt::Float(3.14)
+
+User {..}.to_zdt() => ZRpcDt::Serialized([..]) // где структура User должна иметь признак Serialize
+```
