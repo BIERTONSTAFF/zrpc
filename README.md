@@ -7,8 +7,8 @@ ZRPC — это библиотека для создания удалённых 
 1. **Тип данных ZRpcDt**:
 `ZRpcDt` — это перечисление, которое представляет различные типы данных, используемых в RPC вызовах. Оно включает:
 
-- `Int(i32)` — целое число.
-- `Float(f32)` — число с плавающей запятой.
+- `Int32(i32)` — целое число.
+- `Float32(f32)` — число с плавающей запятой.
 - `String(String)` — строка.
 - `Serialized(Vec<u8>)` — сериализованные данные в виде вектора байтов.
 - `Error(ErrorKind)` — ошибка, которая может возникнуть при обработке вызовов.
@@ -129,6 +129,26 @@ match client.call(ZRpcReq::new(
         println!("Response: {:?}", v); // **Вывод ответа на запрос**
     }
     Err(_) => eprintln!("Failed to call remote procedure"), // **Ошибка при вызове удалённой процедуры**
+}
+```
+# Middleware
+```
+pub struct AuthMiddleware {
+    api_key: String,
+}
+
+impl Middleware for AuthMiddleware {
+    fn before_call(&self, req: &zrpc::types::req::ZRpcReq) -> Result<(), MiddlewareError> {
+        if let Some(ZRpcDt::String(key)) = req.1.first() {
+            if key == &self.api_key {
+                Ok(())
+            } else {
+                middleware_err!("Unauthorized")
+            }
+        } else {
+            middleware_err!("Missing apiKey")
+        }
+    }
 }
 ```
 # Расширения
