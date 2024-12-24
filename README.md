@@ -132,7 +132,7 @@ match client.call(ZRpcReq::new(
 }
 ```
 # Middleware
-```
+```rust
 pub struct AuthMiddleware {
     api_key: String,
 }
