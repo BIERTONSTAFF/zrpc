@@ -1,110 +1,139 @@
-use std::{
-    collections::HashMap,
-    io::{Read, Write},
-    net::TcpListener,
-    sync::{Arc, Mutex},
+use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
+
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::Mutex,
 };
 
 use crate::{
+    error::ZRpcError,
     log,
-    models::{dt::ZRpcDt, error_kind::ErrorKind, req::ZRpcReq},
+    middleware::Middleware,
+    transport::tcp::TcpTransport,
+    types::{dt::ZRpcDt, proc_error::ProcedureError, req::ZRpcReq},
 };
 
 #[macro_export]
 macro_rules! add_procs {
     ($server:expr, $($proc:ident),*) => {
         $(
-            $server.add_proc(stringify!($proc), $proc);
+            $server.add_proc(stringify!($proc), |params| {
+                $proc(params)
+            }).await;
         )*
     };
 }
 
 pub struct ZRpcServer {
     listener: TcpListener,
-    procs: Arc<Mutex<HashMap<String, Box<dyn Fn(&Vec<ZRpcDt>) -> ZRpcDt + Send + Sync>>>>,
+    procs: Arc<
+        Mutex<
+            HashMap<
+                String,
+                Box<dyn Fn(&Vec<ZRpcDt>) -> Result<ZRpcDt, ProcedureError> + Send + Sync>,
+            >,
+        >,
+    >,
+    middleware: Arc<Mutex<Vec<Box<dyn Middleware>>>>,
 }
 
 impl ZRpcServer {
-    pub fn new(addr: &str) -> Result<Self, ()> {
-        let listener = TcpListener::bind(addr).map_err(|_| ())?;
+    pub async fn new(addr: (Ipv4Addr, u16)) -> Result<Self, ZRpcError> {
+        let listener = TcpListener::bind(addr).await.map_err(ZRpcError::Io)?;
 
         Ok(Self {
             listener,
             procs: Arc::new(Mutex::new(HashMap::new())),
+            middleware: Arc::new(Mutex::new(vec![])),
         })
     }
 
-    pub fn start(&mut self) -> Result<(), ()> {
-        for res in self.listener.incoming() {
+    pub async fn start(&mut self) -> Result<(), ZRpcError> {
+        while let Ok((stream, _)) = self.listener.accept().await {
             let procs = self.procs.clone();
+            let middleware = self.middleware.clone();
 
-            std::thread::spawn(move || match res {
-                Ok(mut stream) => {
-                    if let Err(e) = Self::handle_stream(&mut stream, &procs) {
-                        eprintln!("Failed to handle stream: {}", e);
-                    }
+            tokio::spawn(async move {
+                if let Err(e) = Self::handle_stream(stream, &procs, &middleware).await {
+                    eprintln!("Failed to handle stream: {}", e);
                 }
-                Err(e) => eprintln!("Failed to accept connection: {}", e),
             });
         }
+
         Ok(())
     }
 
-    pub fn add_proc<F>(&mut self, name: &str, proc: F)
+    pub async fn add_proc<F>(&mut self, name: &str, proc: F)
     where
-        F: Fn(&Vec<ZRpcDt>) -> ZRpcDt + 'static + Send + Sync,
+        F: Fn(&Vec<ZRpcDt>) -> Result<ZRpcDt, ProcedureError> + 'static + Send + Sync,
     {
         log!("[ZRpcServer] '{}' procedure has been loaded", name);
 
         self.procs
             .lock()
-            .unwrap()
+            .await
             .insert(name.to_string(), Box::new(proc));
     }
 
-    fn handle_stream(
-        stream: &mut std::net::TcpStream,
-        procs: &Arc<Mutex<HashMap<String, Box<dyn Fn(&Vec<ZRpcDt>) -> ZRpcDt + Send + Sync>>>>,
-    ) -> Result<(), String> {
+    pub async fn add_middleware<M: Middleware + 'static>(&mut self, middleware: M) {
+        self.middleware.lock().await.push(Box::new(middleware));
+    }
+
+    async fn handle_stream(
+        stream: TcpStream,
+        procs: &Arc<
+            Mutex<
+                HashMap<
+                    String,
+                    Box<dyn Fn(&Vec<ZRpcDt>) -> Result<ZRpcDt, ProcedureError> + Send + Sync>,
+                >,
+            >,
+        >,
+        middleware: &Arc<Mutex<Vec<Box<dyn Middleware>>>>,
+    ) -> Result<(), ZRpcError> {
+        let mut transport = TcpTransport::new(stream);
+
         loop {
-            let mut len = [0u8; 4];
-
-            if let Err(_) = stream.read_exact(&mut len) {
-                log!(
-                    "[ZRpcServer:{:?}] Connection closed",
-                    std::thread::current().id()
-                );
-
-                return Ok(());
-            }
-
-            let mut buf = vec![0u8; u32::from_be_bytes(len) as usize];
-            stream
-                .read_exact(&mut buf)
-                .map_err(|_| "Failed to read buffer")?;
+            let buf = match transport.receive().await {
+                Ok(buf) => buf,
+                Err(ZRpcError::Io(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    log!(
+                        "[ZRpcServer:{:?}] Connection closed",
+                        std::thread::current().id()
+                    );
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            };
 
             let req: ZRpcReq =
-                bincode::deserialize(&buf).map_err(|_| "Failed to deserialize buffer")?;
-            let bytes = match procs.lock().unwrap().get(&req.0) {
-                Some(proc) => {
-                    bincode::serialize(&proc(&req.1)).map_err(|_| "Failed to serialize result")?
-                }
-                None => bincode::serialize(&ZRpcDt::Error(ErrorKind::ProcedureNotFound))
-                    .map_err(|_| "Failed to serialize error")?,
-            };
-            let len = (bytes.len() as u32).to_be_bytes();
+                bincode::deserialize(&buf).map_err(|e| ZRpcError::Serialization(e.to_string()))?;
 
-            stream
-                .write_all(&len)
-                .map_err(|_| "Failed to write result length")?;
-            stream
-                .write_all(&bytes)
-                .map_err(|_| "Failed to write result")?;
+            let res = {
+                let middleware_lock = middleware.lock().await;
+                let res = middleware_lock
+                    .iter()
+                    .try_fold((), |_, m| m.before_call(&req));
+                drop(middleware_lock);
+
+                match res {
+                    Ok(_) => match procs.lock().await.get(&req.0) {
+                        Some(proc) => proc(&req.1),
+                        None => Err(ProcedureError::NotFound),
+                    },
+                    Err(e) => Err(e.into()),
+                }
+            };
+
+            let bytes =
+                bincode::serialize(&res).map_err(|e| ZRpcError::Serialization(e.to_string()))?;
+
+            transport.send(&bytes).await?;
 
             log!(
-                "[ZRpcServer:{:?}] {} bytes were written",
+                "[ZRpcServer:{:?}] Response sent: {:?}",
                 std::thread::current().id(),
-                len.len() + bytes.len()
+                res
             );
         }
     }

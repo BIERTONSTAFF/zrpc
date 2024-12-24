@@ -1,42 +1,51 @@
-use std::{
-    io::{Read, Write},
-    net::TcpStream,
-};
+use std::{net::Ipv4Addr, time::Duration};
+
+use tokio::{net::TcpStream, time::timeout};
 
 use crate::{
-    log,
-    models::{dt::ZRpcDt, req::ZRpcReq},
+    error::ZRpcError,
+    transport::tcp::TcpTransport,
+    types::{dt::ZRpcDt, proc_error::ProcedureError, req::ZRpcReq},
 };
 
 pub struct ZRpcClient {
-    stream: TcpStream,
+    transport: TcpTransport,
+    timeout: Duration,
 }
 
 impl ZRpcClient {
-    pub fn new(addr: &str) -> Result<Self, ()> {
-        let stream = TcpStream::connect(addr).map_err(|_| ())?;
+    pub async fn new(addr: (Ipv4Addr, u16)) -> Result<Self, ZRpcError> {
+        let stream = TcpStream::connect(addr).await.map_err(ZRpcError::Io)?;
+        let transport = TcpTransport::new(stream);
 
-        Ok(Self { stream })
+        Ok(Self {
+            transport,
+            timeout: Duration::from_secs(30),
+        })
     }
 
-    pub fn call(&mut self, req: ZRpcReq) -> Result<ZRpcDt, ()> {
-        let bytes = bincode::serialize(&req).map_err(|_| ())?;
-        let len = (bytes.len() as u32).to_be_bytes();
+    pub fn set_timeout(&mut self, duration: Duration) {
+        self.timeout = duration;
+    }
 
-        self.stream.write_all(&len).map_err(|_| ())?;
-        self.stream.write_all(&bytes).map_err(|_| ())?;
+    pub async fn call(&mut self, proc: &str, params: Vec<ZRpcDt>) -> Result<ZRpcDt, ZRpcError> {
+        self.execute(ZRpcReq::new(proc, params)).await
+    }
 
-        log!(
-            "[ZRpcClient] {} bytes were written",
-            len.len() + bytes.len()
-        );
+    async fn execute(&mut self, req: ZRpcReq) -> Result<ZRpcDt, ZRpcError> {
+        let bytes =
+            bincode::serialize(&req).map_err(|e| ZRpcError::Serialization(e.to_string()))?;
 
-        let mut len = [0u8; 4];
-        self.stream.read_exact(&mut len).map_err(|_| ())?;
+        timeout(self.timeout, async {
+            self.transport.send(&bytes).await?;
 
-        let mut buf = vec![0u8; u32::from_be_bytes(len) as usize];
-        self.stream.read_exact(&mut buf).map_err(|_| ())?;
+            let bytes = self.transport.receive().await?;
+            let res: Result<ZRpcDt, ProcedureError> = bincode::deserialize(&bytes)
+                .map_err(|e| ZRpcError::Serialization(e.to_string()))?;
 
-        Ok(bincode::deserialize::<ZRpcDt>(&buf).map_err(|_| ())?)
+            res.map_err(ZRpcError::Procedure)
+        })
+        .await
+        .map_err(|_| ZRpcError::TimeoutError)?
     }
 }

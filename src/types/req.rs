@@ -3,9 +3,15 @@ use serde::{Deserialize, Serialize};
 use super::dt::ZRpcDt;
 
 #[macro_export]
-macro_rules! req {
-    ($proc:expr,$params:expr) => {{
-        ZRpcReq::new($proc, $params)
+macro_rules! params {
+    ($($a:expr),*) => {{
+        use zrpc::types::dt::ZRpcDtAuto;
+
+        let mut res: Vec<ZRpcDt> = vec![];
+        $(
+            res.push($a.to_zdt());
+        )*
+        res
     }};
 }
 
